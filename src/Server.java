@@ -1,5 +1,3 @@
-package myHTTP;
-
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -15,7 +13,7 @@ import java.util.Scanner;
 public class Server {
 
     private static String IP_ADDRESS = "localhost";
-    private static String dir = Paths.get("").toAbsolutePath().toString() + "\\src\\";
+    private static String dir = Paths.get("").toAbsolutePath().toString() + "\\filesstorage\\";
     private static int status = 200;
     private static byte[] response;
 
@@ -81,7 +79,7 @@ public class Server {
 
                     //удаление файла
                     case "DELETE":
-                        doDelete(exchange, filename);
+                        doDelete(filename);
                         break;
 
                     //перемещение файла
@@ -127,12 +125,8 @@ public class Server {
             Files.write(path, getParams(exchange.getRequestBody(), new String[]{"content"})[0].getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
         }
 
-        private static void doDelete(HttpExchange exchange, String filename) throws IOException{
-            Path path = Paths.get(dir + filename);
-            if (!Files.exists(path)){
-                throw new FileNotFoundException();
-            }
-            Files.deleteIfExists(Paths.get(dir + filename));
+        private static void doDelete(String filename) throws IOException{
+            Files.delete(Paths.get(dir + filename));
         }
 
         private static void doMove(HttpExchange exchange, String filename) throws IOException{
