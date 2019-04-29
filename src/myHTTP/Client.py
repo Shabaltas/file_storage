@@ -6,7 +6,6 @@ headers = {
 	'Accept-Charset' : 'utf-8'
 }
 print('Enter server address in format [IP:port] ')
-#192.168.0.104:8080
 url = input()
 answer = ''
 while (answer != '0'):
