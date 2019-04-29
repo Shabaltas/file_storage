@@ -4,19 +4,19 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-
 import java.io.*;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.URLDecoder;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.nio.file.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.InputMismatchException;
+import java.util.Scanner;
 
 public class Server {
 
     private static String IP_ADDRESS = "localhost";
     private static String dir = Paths.get("").toAbsolutePath().toString() + "\\src\\";
-    private static int status;
+    private static int status = 200;
     private static byte[] response;
 
     static {
@@ -27,12 +27,26 @@ public class Server {
         }
     }
 
-    public static void main(String[] args) throws Exception {
-        System.out.println("http://" + IP_ADDRESS + ":8080/");
-        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 5);
-        server.createContext("/", new MyHandler());
-        server.setExecutor(null); // creates a default executor
-        server.start();
+    public static void main(String[] args){
+        boolean ok = false;
+        while (!ok){
+            try {
+                System.out.println("Enter port number");
+                Scanner in = new Scanner(System.in);
+                HttpServer server = HttpServer.create(new InetSocketAddress(in.nextInt()), 5);
+                ok = true;
+                System.out.println(IP_ADDRESS + ":" + server.getAddress().getPort());
+                server.createContext("/", new MyHandler());
+                server.setExecutor(null); // creates a default executor
+                server.start();
+            }catch (InputMismatchException e){
+                System.out.println("Wrong input");
+            }catch (BindException e){
+                System.out.println("Port is already in use");
+            }catch (IOException e){
+                e.printStackTrace();
+            }
+        }
     }
 
     private static class MyHandler implements HttpHandler {
@@ -47,41 +61,45 @@ public class Server {
             }
 
             String filename = requestURI.substring(requestURI.lastIndexOf('/') + 1);
-            switch (exchange.getRequestMethod()){
+            try {
+                switch (exchange.getRequestMethod()) {
 
-                //чтение файла
-                case "GET":
-                    doGet(filename);
-                    //doGet(requestURI.substring(requestURI.lastIndexOf("/") + 1));
-                    break;
+                    //чтение файла
+                    case "GET":
+                        doGet(filename);
+                        break;
 
-                //добавление в конец файла
-                case "POST":
-                    doPost(filename, exchange.getRequestBody());
-                    break;
+                    //добавление в конец файла
+                    case "POST":
+                        doPost(exchange, filename);
+                        break;
 
-                //перезапись файла
-                case "PUT":
-                    doPut(filename, exchange.getRequestBody());
-                    break;
+                    //перезапись файла
+                    case "PUT":
+                        doPut(exchange, filename);
+                        break;
 
-                //удаление файла
-                case "DELETE":
-                     doDelete(filename);
-                    break;
+                    //удаление файла
+                    case "DELETE":
+                        doDelete(exchange, filename);
+                        break;
 
-                //перемещение файла
-                case "MOVE":
-                    doMove(filename, exchange.getRequestBody());
-                    break;
+                    //перемещение файла
+                    case "MOVE":
+                        doMove(exchange, filename);
+                        break;
 
-                //копирование файла
-                case "COPY":
-                    doCopy(filename, exchange.getRequestBody());
-                    break;
-                default:
-                    status = 405;
-                    return;
+                    //копирование файла
+                    case "COPY":
+                        doCopy(exchange, filename);
+                        break;
+                    default:
+                        status = 405;
+                }
+            }catch (FileNotFoundException | NoSuchFileException e) {
+                status = 404;
+            } catch (IOException e){
+                status = 400;
             }
             exchange.sendResponseHeaders(status, response.length);
             OutputStream os = exchange.getResponseBody();
@@ -89,73 +107,51 @@ public class Server {
             os.close();
         }
 
-        private static void doGet(String filename){
-            try {
-                response = Files.readAllBytes(Paths.get(dir + filename));
-                status = 200;
-                //response = new BufferedReader(new InputStreamReader(new FileInputStream(filename))).readLine();
-            } catch (FileNotFoundException | NoSuchFileException e) {
-                status = 404;
-            } catch (IOException e){
-                status = 400;
-            }
+        private static void doGet(String filename) throws  IOException{
+            response = Files.readAllBytes(Paths.get(dir + filename));
         }
 
-        private static void doPost(String filename, InputStream body){
-            try {
-                Files.write(Paths.get(dir + filename), getParams(body, new String[]{"content"})[0].getBytes(), StandardOpenOption.APPEND);
-                status = 200;
-            }catch (FileNotFoundException | NoSuchFileException e) {
-                status = 404;
-            }catch (IOException e){
-                status = 400;
+        private static void doPost(HttpExchange exchange, String filename) throws IOException{
+            Path path = Paths.get(dir + filename);
+            if (!Files.exists(path)){
+                Files.createFile(path);
             }
+            Files.write(path, getParams(exchange.getRequestBody(), new String[]{"content"})[0].getBytes(), StandardOpenOption.APPEND);
         }
 
-        private static void doPut(String filename, InputStream body){
-            StringBuilder bodystr = new StringBuilder();
-            try{
-                Files.write(Paths.get(dir + filename), getParams(body, new String[]{"content"})[0].getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
-                status = 200;
-            }catch (FileNotFoundException | NoSuchFileException e) {
-                status = 404;
-            }catch (IOException e){
-                status = 400;
+        private static void doPut(HttpExchange exchange, String filename) throws IOException{
+            Path path = Paths.get(dir + filename);
+            if (!Files.exists(path)){
+                Files.createFile(path);
             }
+            Files.write(path, getParams(exchange.getRequestBody(), new String[]{"content"})[0].getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
         }
 
-        private static void doDelete(String filename){
-            try {
-                Files.deleteIfExists(Paths.get(dir + filename));
-                status = 200;
-            } catch (FileNotFoundException | NoSuchFileException e) {
-                status = 404;
-            } catch (IOException e){
-                status = 400;
+        private static void doDelete(HttpExchange exchange, String filename) throws IOException{
+            Path path = Paths.get(dir + filename);
+            if (!Files.exists(path)){
+                throw new FileNotFoundException();
             }
+            Files.deleteIfExists(Paths.get(dir + filename));
         }
 
-        private static void doMove(String filename, InputStream body){
-            try {
-                Files.move(Paths.get(dir + filename), Paths.get(getParams(body, new String[]{"newPath"})[0] + filename));
-                status = 200;
-            }catch (FileNotFoundException | NoSuchFileException e){
-                status = 404;
-            }catch (IOException e) {
-                status = 400;
+        private static void doMove(HttpExchange exchange, String filename) throws IOException{
+            Path path = Paths.get(getParams(exchange.getRequestBody(), new String[]{"newPath"})[0] + filename);
+            if (Files.exists(path)){
+                exchange.getResponseHeaders().put("message", new ArrayList<>(Arrays.asList("File with new name is already exists ")));
+                throw new IOException();
             }
+            Files.move(Paths.get(dir + filename), path);
         }
 
-        private static void doCopy(String filename, InputStream body){
-            try {
-                String[] params = getParams(body, new String[]{"newPath", "newFilename"});
-                Files.copy(Paths.get(dir + filename), Paths.get(params[0] + params[1]), StandardCopyOption.REPLACE_EXISTING);
-                status = 200;
-            }catch (FileNotFoundException | NoSuchFileException e){
-                status = 404;
-            }catch (IOException e) {
-                status = 400;
+        private static void doCopy(HttpExchange exchange, String filename) throws IOException{
+            String[] params = getParams(exchange.getRequestBody(), new String[]{"newPath", "newFilename"});
+            Path path = Paths.get(params[0] + params[1]);
+            if (Files.exists(path)){
+                exchange.getResponseHeaders().put("message", new ArrayList<>(Arrays.asList("File with new name is already exists ")));
+                throw new IOException();
             }
+            Files.copy(Paths.get(dir + filename), path);//, StandardCopyOption.REPLACE_EXISTING);
         }
 
         private static String[] getParams(InputStream body, String[] params) throws IOException{
